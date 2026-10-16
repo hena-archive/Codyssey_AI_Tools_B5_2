@@ -126,6 +126,39 @@ class MiniGit:
             print(key, value)
         
         print("="*60)
+
+
+    def print_current_branch(self):
+        print("="*10, end="")
+        print("print_current_branch", end="")
+        print("="*10)
+
+        print(f"현재 브랜치: {self.head} : {self.branches[self.head]}")
+        
+        print("="*60)
+
+    def print_log(self):
+        print("="*10, end="")
+        print("print_current_branch", end="")
+        print("="*10)
+
+        print(f"값 체크: self.head : {self.head}")
+
+        commit_hash = self.branches[self.head]
+        if commit_hash is None:
+            return
+
+        while commit_hash is not None:
+            print(commit_hash.hash)
+            print(commit_hash.message)
+            print(commit_hash.author)
+            print(commit_hash.timestamp)
+            print()
+            print()
+            commit_hash = commit_hash.parent
+
+        
+        print("="*60)
     # --------------------------------------------------------
     # 공통 검사 및 출력
     # --------------------------------------------------------
@@ -223,6 +256,8 @@ class MiniGit:
     def commit(self, message):
         """새 커밋을 생성하고 브랜치와 역색인을 갱신한다."""
 
+        print(f"message: {message}")
+
         if not self._require_initialized():
             return
 
@@ -242,7 +277,7 @@ class MiniGit:
         # 이 Mini Git에서 식별자를 생성하기 위한 용도로 사용한다.
         raw_data = (
             f"{self.commit_counter}|{timestamp}|"
-            f"{self.author}|{message}|{parents}"
+            f"{self.current_author}|{message}|{parents}"
         )
         digest = hashlib.sha1(raw_data.encode("utf-8")).hexdigest()[:12]
         commit_hash = f"c{self.commit_counter:06d}-{digest}"
@@ -250,7 +285,7 @@ class MiniGit:
         new_commit = Commit(
             commit_hash,
             message,
-            self.author,
+            self.current_author,
             timestamp,
             parents
         )
@@ -546,6 +581,12 @@ def debug_branch_info(git):
     git.print_branch()
     pass
 
+def debug_current_branch_info(git):
+    git.print_current_branch()
+    pass
+
+def debug_commit_log(git):
+    git.print_log()
 # ============================================================
 # 4. CLI 명령어 파서 및 REPL
 # ============================================================
@@ -591,31 +632,36 @@ def execute_command(git, line):
     elif command == "DEBUG_BRANCH":
         debug_branch_info(git)
 
-    # # SWITCH <branch_name>
-    # elif command == "SWITCH":
-    #     if len(values) != 1:
-    #         print("Invalid args")
-    #     else:
-    #         git.switch(values[0])
+    # SWITCH <branch_name>
+    elif command == "SWITCH":
+        if len(values) != 1:
+            print("Invalid args")
+        else:
+            git.switch(values[0])
+    elif command == "DEBUG_SWITCH":
+        debug_current_branch_info(git)
 
-    # # COMMIT <message>
-    # elif command == "COMMIT":
-    #     if len(values) != 1:
-    #         print("Invalid args")
-    #     else:
-    #         git.commit(values[0])
+    # COMMIT <message>
+    elif command == "COMMIT":
+        if len(values) != 1:
+            print("Invalid args")
+        else:
+            git.commit(values[0])
+
+    elif command == "DEBUG_COMMIT":
+        debug_commit_log(git)
 
     # # LOG
     # # LOG --sort-by=date
     # # LOG --sort-by=author
-    # elif command == "LOG":
-    #     if len(values) == 0:
-    #         git.log()
-    #     elif len(values) == 1 and values[0].startswith("--sort-by="):
-    #         option = values[0].split("=", 1)[1].lower()
-    #         git.log(option)
-    #     else:
-    #         print("Invalid args")
+    elif command == "LOG":
+        if len(values) == 0:
+            git.log()
+        elif len(values) == 1 and values[0].startswith("--sort-by="):
+            option = values[0].split("=", 1)[1].lower()
+            git.log(option)
+        else:
+            print("Invalid args")
 
     # # PATH <commit1> <commit2>
     # elif command == "PATH":
