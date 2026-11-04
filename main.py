@@ -2,6 +2,8 @@
 import hashlib
 import shlex
 import time
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 
 # ============================================================
@@ -11,16 +13,18 @@ import time
 class Commit:
     """하나의 커밋이 가지는 정보를 저장한다."""
 
-    def __init__(self, commit_hash, message, author, timestamp, parents):
+    def __init__(self, commit_hash, message, author, timestamp, parents, branch_name = "empty"):
         self.hash = commit_hash
         self.message = message
         self.author = author
         self.timestamp = timestamp
-
+        
         # 부모 커밋이 여러 개일 수 있으므로 리스트로 관리한다.
         # 일반 커밋은 부모가 1개, 최초 커밋은 부모가 0개다.
         # Merge commit을 구현하면 부모가 2개가 될 수 있다.
         self.parents = parents
+
+        self.branch_name = branch_name
 
 
 # ============================================================
@@ -118,12 +122,12 @@ class MiniGit:
         print("="*60)
 
     def print_branch(self):
-        print("="*10, end="")
+        print("=" * 20, end="")
         print("print_branch", end="")
-        print("="*10)
+        print("=" * 20)
 
         for key, value in self.branches.items():
-            print(key, value)
+            print(f"branch [{key}] : commit hash [{value}]")
         
         print("="*60)
 
@@ -148,14 +152,18 @@ class MiniGit:
         if commit_hash is None:
             return
 
-        while commit_hash is not None:
-            print(commit_hash.hash)
-            print(commit_hash.message)
-            print(commit_hash.author)
-            print(commit_hash.timestamp)
+        # print(commit_hash, type(commit_hash))
+        current_commit = self.commits[commit_hash]
+        print(current_commit)
+
+        while current_commit is not None:
+            print(current_commit.hash)
+            print(current_commit.message)
+            print(current_commit.author)
+            print(current_commit.timestamp)
             print()
             print()
-            commit_hash = commit_hash.parent
+            current_commit = current_commit.parents
 
         
         print("="*60)
@@ -181,10 +189,18 @@ class MiniGit:
 
     def _print_commit(self, commit):
         """커밋의 주요 정보를 출력한다."""
+
+        dt = datetime.fromtimestamp(
+            commit.timestamp,
+            tz=ZoneInfo("Asia/Seoul")
+        )
+
+        # print(dt.strftime("%Y-%m-%d %H:%M:%S"))
+
         print(
             f"hash: {commit.hash} | "
             f"author: {commit.author} | "
-            f"timestamp: {commit.timestamp:.6f} | "
+            f"timestamp: {dt} | "
             f"message: {commit.message}"
         )
 
@@ -209,8 +225,9 @@ class MiniGit:
         self.keyword_index = {}
         self.author_index = {}
 
-        print(f"Initialized repository. User: {user_name}")
-        print("Created branch: main")
+        print(f"Initialized repository.")
+        print(f"Current branch: {self.head}")
+        print(f"Current User: {user_name}")
 
     # --------------------------------------------------------
     # BRANCH
@@ -256,8 +273,6 @@ class MiniGit:
     def commit(self, message):
         """새 커밋을 생성하고 브랜치와 역색인을 갱신한다."""
 
-        print(f"message: {message}")
-
         if not self._require_initialized():
             return
 
@@ -287,7 +302,8 @@ class MiniGit:
             message,
             self.current_author,
             timestamp,
-            parents
+            parents,
+            self.head
         )
 
         # 1. 커밋 저장소에 추가한다.
@@ -298,7 +314,7 @@ class MiniGit:
 
         # 3. 작성자 역색인을 갱신한다.
         self.author_index.setdefault(
-            self.author, set()
+            self.current_author, set()
         ).add(commit_hash)
 
         # 4. 메시지를 공백으로 분리하고 소문자로 정규화한다.
@@ -310,6 +326,8 @@ class MiniGit:
 
         print("Created commit:")
         self._print_commit(new_commit)
+        print(f"[{self.head} {commit_hash}] {message}")
+        
 
     # --------------------------------------------------------
     # LOG: 부모가 자식보다 먼저 출력되는 위상 정렬
@@ -407,7 +425,7 @@ class MiniGit:
     # --------------------------------------------------------
     # PATH: 무방향 커밋 그래프의 최단 경로
     # --------------------------------------------------------
-
+    # 보류
     def path(self, start_hash, end_hash):
         """
         부모 연결을 무방향 간선으로 취급하고 BFS로 최단 경로를 찾는다.
@@ -475,7 +493,10 @@ class MiniGit:
     # --------------------------------------------------------
 
     def ancestors(self, commit_hash):
-        """지정한 커밋의 모든 조상을 중복 없이 출력한다."""
+        """
+        지정한 커밋의 모든 조상을 중복 없이 출력한다.
+        DFS vs BFS -> DFS가 좀 더 나아보임.
+        """
 
         if not self._require_initialized():
             return
@@ -504,8 +525,13 @@ class MiniGit:
             return
 
         # 출력 순서는 해시 사전순으로 정한다.
+        # for ancestor_hash in merge_sort(list(visited)):
+        #     self._print_commit(self.commits[ancestor_hash])
+
         for ancestor_hash in merge_sort(list(visited)):
             self._print_commit(self.commits[ancestor_hash])
+                    
+        
 
     # --------------------------------------------------------
     # SEARCH: 역색인을 이용한 검색
@@ -587,6 +613,7 @@ def debug_current_branch_info(git):
 
 def debug_commit_log(git):
     git.print_log()
+
 # ============================================================
 # 4. CLI 명령어 파서 및 REPL
 # ============================================================
@@ -651,9 +678,9 @@ def execute_command(git, line):
     elif command == "DEBUG_COMMIT":
         debug_commit_log(git)
 
-    # # LOG
-    # # LOG --sort-by=date
-    # # LOG --sort-by=author
+    # LOG
+    # LOG --sort-by=date
+    # LOG --sort-by=author
     elif command == "LOG":
         if len(values) == 0:
             git.log()
@@ -663,42 +690,42 @@ def execute_command(git, line):
         else:
             print("Invalid args")
 
-    # # PATH <commit1> <commit2>
-    # elif command == "PATH":
-    #     if len(values) != 2:
-    #         print("Invalid args")
-    #     else:
-    #         git.path(values[0], values[1])
+    # PATH <commit1> <commit2>
+    elif command == "PATH":
+        if len(values) != 2:
+            print("Invalid args")
+        else:
+            git.path(values[0], values[1])
 
-    # # ANCESTORS <commit_hash>
-    # elif command == "ANCESTORS":
-    #     if len(values) != 1:
-    #         print("Invalid args")
-    #     else:
-    #         git.ancestors(values[0])
+    # ANCESTORS <commit_hash>
+    elif command == "ANCESTORS":
+        if len(values) != 1:
+            print("Invalid args")
+        else:
+            git.ancestors(values[0])
 
-    # # SEARCH <keyword>
-    # # SEARCH --author=<name>
-    # elif command == "SEARCH":
-    #     if len(values) == 1 and values[0].startswith("--author="):
-    #         author = values[0].split("=", 1)[1]
-    #         git.search_author(author)
+    # SEARCH <keyword>
+    # SEARCH --author=<name>
+    elif command == "SEARCH":
+        if len(values) == 1 and values[0].startswith("--author="):
+            author = values[0].split("=", 1)[1]
+            git.search_author(author)
 
-    #     elif len(values) == 1:
-    #         git.search_keyword(values[0])
+        elif len(values) == 1:
+            git.search_keyword(values[0])
 
-    #     else:
-    #         print("Invalid args")
+        else:
+            print("Invalid args")
 
-    # elif command in ("EXIT", "QUIT"):
-    #     if values:
-    #         print("Invalid args")
-    #         return True
-    #     print("Bye!")
-    #     return False
+    elif command in ("EXIT", "QUIT"):
+        if values:
+            print("Invalid args")
+            return True
+        print("Bye!")
+        return False
 
-    # else:
-    #     print(f"Unknown command: {args[0]}")
+    else:
+        print(f"Unknown command: {args[0]}")
 
     return True
 
